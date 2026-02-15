@@ -2,3 +2,5 @@ checkpoints/*
 data/raw/*
 
 .venv/*
+
+src/__pycache__
