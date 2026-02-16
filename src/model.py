@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn 
 import torch.nn.functional as F
 
+from config import config
+
+use_layernorm = config['use_layernorm']
+
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     batch, slen, n_kv_heads, head_dim = hidden_states.shape
     if n_rep == 1:
@@ -51,7 +55,12 @@ class TransformerBlock(nn.Module):
 
         if use_te:
             import transformer_engine.pytorch as te
-            self.ln_attn = te.LayerNormLinear(d_model, total_qkv_dim, bias=False)
+            self.ln_attn = te.LayerNormLinear(
+                d_model, 
+                total_qkv_dim, 
+                bias=False,
+                normalization="LayerNorm" if use_layernorm else "RMSNorm",
+            ) 
             self.c_proj = te.Linear(d_model, d_model, bias=False)
             
             ffn_hidden = int(d_model * 8/3)
@@ -59,15 +68,16 @@ class TransformerBlock(nn.Module):
                 hidden_size=d_model, 
                 ffn_hidden_size=ffn_hidden, 
                 bias=False, 
+                normalization="LayerNorm" if use_layernorm else "RMSNorm",
                 activation='swiglu'
             )
         else:
-            self.ln1 = nn.LayerNorm(d_model)
+            self.ln1 = nn.LayerNorm(d_model) if use_layernorm else nn.RMSNorm(d_model)
             self.qkv_proj = nn.Linear(d_model, total_qkv_dim, bias=False)
             self.c_proj = nn.Linear(d_model, d_model, bias=False)
             
             ffn_hidden = int(d_model * 8/3)
-            self.ln2 = nn.LayerNorm(d_model)
+            self.ln2 = nn.LayerNorm(d_model) if use_layernorm else nn.RMSNorm(d_model)
             self.mlp = nn.Sequential(
                 nn.Linear(d_model, 2 * ffn_hidden, bias=False),
                 SwiGLU(),
@@ -161,10 +171,11 @@ class NanoLLM(nn.Module):
         
         if use_te:
             import transformer_engine.pytorch as te
-            self.final_norm = te.LayerNorm(d_model)
-            self.lm_head = te.Linear(d_model, vocab_size, bias=False)
+            self.final_norm = te.LayerNorm(d_model) if use_layernorm else te.RMSNorm(d_model)
+            self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
+            
         else:
-            self.final_norm = nn.LayerNorm(d_model)
+            self.final_norm = nn.LayerNorm(d_model) if use_layernorm else nn.RMSNorm(d_model)
             self.lm_head = nn.Linear(d_model, vocab_size, bias=False)
         
             self.lm_head.weight = self.token_embedding.weight
@@ -179,9 +190,10 @@ class NanoLLM(nn.Module):
                 nn.init.normal_(module.weight, mean=0.0, std=0.02)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
-            elif isinstance(module, nn.LayerNorm):
+            elif isinstance(module, (nn.LayerNorm, nn.RMSNorm)):
                 nn.init.ones_(module.weight)
-                nn.init.zeros_(module.bias)
+                if hasattr(module, 'bias') and module.bias is not None:
+                    nn.init.zeros_(module.bias)
             elif isinstance(module, nn.Embedding):
                 nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
@@ -202,3 +214,5 @@ class NanoLLM(nn.Module):
             return logits, loss
         
         return logits
+    
+

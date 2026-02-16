@@ -19,6 +19,9 @@ config = {
     'n_kv_head': 3,
     'vocab_size': 49152,
 
+    # LayerNorm 
+    'use_layernorm': True, # Using LayerNorm instead of RMSNorm
+
     # BATCHS
     'batch_size': 256,
     'micro_batch_size': 4,  
@@ -26,6 +29,10 @@ config = {
     # OPTIMIZER
     'max_lr': 3e-3,
     
+    # LOGGING INTERVAL
     'logging_interval': 2,
+
+    # DEVICE
     'device': 'cuda' if torch.cuda.is_available() else 'cpu'
+    
 }
