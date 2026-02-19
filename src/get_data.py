@@ -30,46 +30,67 @@ def load_all_datasets():
     datasets = [ds_edu, ds_python, ds_math, ds_cosmo, ds_talk]
     return [d.map(standardize_column, remove_columns=list(d.features.keys())) for d in datasets]
 
+def create_dataset_iterators():
+    ds_edu, ds_python, ds_math, ds_cosmo, ds_talk = load_all_datasets()
+    return {
+        "web": iter(ds_edu),
+        "python": iter(ds_python),
+        "cosmo": iter(ds_cosmo),
+        "math": iter(ds_math),
+        "talk": iter(ds_talk)
+    }
+
+def process_sequence(ids, labels, sample, tokenizer, seq_len, pad_token_id):
+    is_chat = 'messages' in sample
+    
+    if len(ids) > seq_len:
+        if is_chat:
+            ids = ids[:seq_len]
+            labels = labels[:seq_len]
+            end_token = tokenizer.encode("<|im_end|>")[0]
+            ids[-1] = end_token
+            labels[-1] = end_token
+        else:
+            ids = ids[:seq_len]
+            labels = labels[:seq_len]
+    
+    pad_len = seq_len - len(ids)
+    if pad_len > 0:
+        ids.extend([pad_token_id] * pad_len)
+        labels.extend([-100] * pad_len)
+    
+    return ids, labels
+
 def get_stage_mixture(stage_name):
     ds_edu, ds_python, ds_math, ds_cosmo, ds_talk = load_all_datasets()
     
+    stage_map = {"STAGE_1": 1, "STAGE_2": 2, "STAGE_3": 3, "STAGE_4": 4}
+    stage_num = stage_map.get(stage_name)
+    
+    if stage_num is None:
+        raise ValueError(f"Unknown stage: {stage_name}")
+    
+    ratios = config['stage_ratios'][stage_num]
+    
+    datasets_list = []
+    probabilities = []
+    dataset_mapping = {
+        "web": ds_edu,
+        "python": ds_python,
+        "math": ds_math,
+        "cosmo": ds_cosmo,
+        "talk": ds_talk
+    }
+    
+    for domain, ratio in ratios.items():
+        if ratio > 0.0:
+            datasets_list.append(dataset_mapping[domain])
+            probabilities.append(ratio)
+    
     seeds = {"STAGE_1": 42, "STAGE_2": 43, "STAGE_3": 44, "STAGE_4": 45}
     current_seed = seeds.get(stage_name, 42)
-
-    if stage_name == "STAGE_1":
-        # Mix : 85% Web / 15% Python
-        return interleave_datasets(
-            [ds_edu, ds_python], 
-            probabilities=[0.85, 0.15], 
-            seed=current_seed
-        )
     
-    elif stage_name == "STAGE_2":
-        # Mix : 70% Web / 20% Python / 10% Cosmopedia
-        return interleave_datasets(
-            [ds_edu, ds_python, ds_cosmo], 
-            probabilities=[0.70, 0.20, 0.10], 
-            seed=current_seed
-        )
-    
-    elif stage_name == "STAGE_3":
-        # Mix : 55% Web / 20% Python / 10% Cosmo / 15% Math
-        return interleave_datasets(
-            [ds_edu, ds_python, ds_cosmo, ds_math], 
-            probabilities=[0.55, 0.20, 0.10, 0.15], 
-            seed=current_seed
-        )
-    
-    elif stage_name == "STAGE_4":
-        # Mix : 35% Web / 20% Python / 25% Cosmo / 20% Math
-        return interleave_datasets(
-            [ds_edu, ds_python, ds_cosmo, ds_math], 
-            probabilities=[0.35, 0.20, 0.25, 0.20], 
-            seed=current_seed
-        )
-    
-    else:
-        raise ValueError(f"Unknown current stage : {stage_name}")
+    return interleave_datasets(datasets_list, probabilities=probabilities, seed=current_seed)
 
 def get_tokenizer_mixture():
     ds_edu, ds_python, ds_math, ds_cosmo, ds_talk = load_all_datasets()
@@ -113,6 +134,59 @@ def format_for_sft(example, tokenizer):
     
     return all_ids, all_labels
 
+def prepare_validation_data(batch_size=config['batch_size']):
+    dest = config['dataset_path']
+    tok_json = os.path.join(config['tokenizer_path'], "tokenizer.json")
+    tokenizer = SimpleTokenizer(tok_json)
+    
+    seq_len = config['block_size'] + 1 
+    pad_token_id = tokenizer.encode("<|endoftext|>")[0]
+    
+    print("Loading datasets for validation batches...")
+    iters = create_dataset_iterators()
+
+    print(f"Generating validation batches (Batch Size: {batch_size}, Seq Len: {seq_len})...")
+    
+    for stage, ratios in config['stage_ratios'].items():
+        bin_data_path = os.path.join(dest, f"val_stage_{stage}_data.bin")
+        bin_labels_path = os.path.join(dest, f"val_stage_{stage}_labels.bin")
+        
+        print(f"  -> Building Stage {stage} validation batch...")
+        
+        with open(bin_data_path, "wb") as f_data, open(bin_labels_path, "wb") as f_labels:
+            sequences_collected = 0
+            
+            for domain, ratio in ratios.items():
+                if ratio == 0.0:
+                    continue
+                
+                n_seqs = int(batch_size * ratio)
+                
+                for _ in range(n_seqs):
+                    sample = next(iters[domain])
+                    
+                    ids, labels = format_for_sft(sample, tokenizer)
+                    ids, labels = process_sequence(ids, labels, sample, tokenizer, seq_len, pad_token_id)
+                    
+                    np.array(ids, dtype=np.uint16).tofile(f_data)
+                    np.array(labels, dtype=np.int32).tofile(f_labels)
+                    
+                    sequences_collected += 1
+                    
+            while sequences_collected < batch_size:
+                majority_domain = max(ratios, key=ratios.get)
+                sample = next(iters[majority_domain])
+                
+                ids, labels = format_for_sft(sample, tokenizer)
+                ids, labels = process_sequence(ids, labels, sample, tokenizer, seq_len, pad_token_id)
+                
+                np.array(ids, dtype=np.uint16).tofile(f_data)
+                np.array(labels, dtype=np.int32).tofile(f_labels)
+                
+                sequences_collected += 1
+                
+    print(f"All 5 validation batches generated in {dest}!")
+
 def prepare_sft_data():
     dest = config['dataset_path']
     bin_data_path = os.path.join(dest, "sft_data.bin")
@@ -122,11 +196,26 @@ def prepare_sft_data():
     sft_target_tokens = config['stf_target_tokens']
     
     print(f"Loading SFT datasets from HuggingFace...")
-    ds_talk = load_dataset("HuggingFaceTB/smoltalk", "all", split="train", streaming=True)
-    ds_edu = load_dataset("HuggingFaceTB/smollm-corpus", "fineweb-edu-dedup", split="train", streaming=True)
-    ds_cosmo = load_dataset("HuggingFaceTB/smollm-corpus", "cosmopedia-v2", split="train", streaming=True)
+    ds_edu, ds_python, ds_math, ds_cosmo, ds_talk = load_all_datasets()
     
-    ds_mixed = interleave_datasets([ds_talk, ds_edu, ds_cosmo], probabilities=[0.75, 0.15, 0.10], seed=46)
+    ratios = config['stage_ratios'][5]
+    
+    datasets_list = []
+    probabilities = []
+    dataset_mapping = {
+        "web": ds_edu,
+        "python": ds_python,
+        "math": ds_math,
+        "cosmo": ds_cosmo,
+        "talk": ds_talk
+    }
+    
+    for domain, ratio in ratios.items():
+        if ratio > 0.0:
+            datasets_list.append(dataset_mapping[domain])
+            probabilities.append(ratio)
+    
+    ds_mixed = interleave_datasets(datasets_list, probabilities=probabilities, seed=46)
     tokenizer = SimpleTokenizer(tok_json)
     
     seq_len = config['block_size'] + 1 
@@ -142,6 +231,7 @@ def prepare_sft_data():
             
             if len(ids) < 10: 
                 continue
+            
             if (np.array(labels) != -100).sum() == 0: 
                 continue
             
@@ -240,6 +330,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--prepare-sft", action="store_true", help="Preparing SFT datasets")
+    parser.add_argument("--validation", action="store_true", help="Generate 5 validation batches encoded in .bin")
     args = parser.parse_args()
     
     os.makedirs(config['dataset_path'], exist_ok=True)
@@ -247,5 +338,10 @@ if __name__ == "__main__":
     
     if args.prepare_sft:
         prepare_sft_data()
+        os._exit(0)
+    elif args.validation:
+        prepare_validation_data() 
+        os._exit(0)
     else:
         get_data()
+        os._exit(0)

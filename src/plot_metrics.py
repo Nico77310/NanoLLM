@@ -41,7 +41,6 @@ def plot_training(pretrain_ckpt, sft_ckpt=None, output_file="training_report.png
             tokens.extend(sft_tokens_stretched + last_pretrain_tokens)
             loss.extend(sft_history['loss'])
             lr.extend(sft_history['lr'])
-            
             print(f"Combined histories: {len(pretrain_history['tokens'])} steps (pretrain) + {len(sft_history['tokens'])} steps (SFT) [stretch x{sft_stretch_factor}]")
     
     tokens = np.array(tokens)
@@ -53,11 +52,11 @@ def plot_training(pretrain_ckpt, sft_ckpt=None, output_file="training_report.png
     sft_end = target_tokens_B + (sft_target_tokens_B * sft_stretch_factor) if sft_ckpt else target_tokens_B + sft_target_tokens_B
     
     stages = [
-        (0, 0.4 * target_tokens_B, "Stage 1 (Web)", 'blue'),
-        (0.4 * target_tokens_B, 0.7 * target_tokens_B, "Stage 2 (Cosmo)", 'cyan'),
-        (0.7 * target_tokens_B, 0.9 * target_tokens_B, "Stage 3 (Maths)", 'orange'),
-        (0.9 * target_tokens_B, target_tokens_B, "Stage 4 (Expert)", 'red'),
-        (target_tokens_B, sft_end, "Stage 5 (SFT)", 'green') 
+        (0, 0.4 * target_tokens_B, "Stage 1\n(General: 85% Web)", 'blue'),
+        (0.4 * target_tokens_B, 0.7 * target_tokens_B, "Stage 2\n(+Knowledge: 10% Cosmo)", 'cyan'),
+        (0.7 * target_tokens_B, 0.9 * target_tokens_B, "Stage 3\n(+Reasoning: 15% Math)", 'orange'),
+        (0.9 * target_tokens_B, target_tokens_B, "Stage 4\n(Expert: 25% Cosmo + 20% Math)", 'red'),
+        (target_tokens_B, sft_end, "Stage 5\n(SFT: 75% Chat)", 'green') 
     ]
 
     window = 50
@@ -68,9 +67,9 @@ def plot_training(pretrain_ckpt, sft_ckpt=None, output_file="training_report.png
         ax1.plot(tokens, loss, color='#2c3e50', alpha=0.1, label='Raw Loss')
     else:
         ax1.plot(tokens, loss, color='#2c3e50')
-
+    
     ax1.set_ylabel("Cross Entropy Loss", fontsize=12)
-    ax1.set_title("Training Dynamics (Pretraining + SFT)", fontsize=14, fontweight='bold')
+    ax1.set_title("Training Dynamics (Curriculum Learning: 4 Stages + SFT)", fontsize=14, fontweight='bold')
     ax1.grid(True, which='both', linestyle='--', alpha=0.5)
     ax1.legend(loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0, frameon=True, fancybox=True, shadow=True)
 
@@ -81,7 +80,7 @@ def plot_training(pretrain_ckpt, sft_ckpt=None, output_file="training_report.png
             mid_point = (start + end) / 2
             ax1.text(mid_point, y_max - (y_max-y_min)*0.05, name, 
                     color=color, fontweight='bold', ha='center', fontsize=9)
-
+    
     if sft_ckpt:
         ax1.axvline(x=target_tokens_B, color='green', linestyle='--', linewidth=2, alpha=0.7, label='SFT Start')
         real_sft_end = target_tokens_B + sft_target_tokens_B
@@ -122,6 +121,7 @@ if __name__ == "__main__":
                         help="Output file")
     parser.add_argument("--stretch", type=int, default=5,
                         help="SFT phase stretch factor (default: 5)")
+    
     args = parser.parse_args()
     
     plot_training(args.pretrain, args.sft, args.output, args.stretch)

@@ -18,6 +18,8 @@ torch.backends.cudnn.allow_tf32 = True
 target_tokens = config['pre_training_target_tokens']
 sft_target_tokens = config['stf_target_tokens']
 
+use_te = config['use_te']
+
 def get_lr(tokens_seen, max_lr):
     
     warmup_tokens = 0.05 * target_tokens      
@@ -121,6 +123,7 @@ def train(args):
     C = config
     device = C['device']
     max_lr = C['max_lr']
+    vocab_size = C['vocab_size']
     block_size = C['block_size']
     d_model = C['d_model']
     n_layer = C['n_layer']
@@ -178,7 +181,7 @@ def train(args):
         n_head=n_head, 
         max_len=block_size,
         n_kv_head=n_kv_head,
-        use_te=args.precision == "fp8"
+        use_te=args.precision == "fp8" if args.precision else use_te
     )
     
     model.to(device, dtype=torch.bfloat16)

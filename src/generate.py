@@ -33,11 +33,18 @@ def apply_repetition_penalty(logits, sequences, penalty, window=50):
     
     return logits
 
-def load_loaded_model(precision="bf16", model_ckpt=llm_chat_file_path):
+def load_loaded_model(precision=None, model_ckpt=llm_chat_file_path):
     print(f"Loading tokenizer from {tokenizer_path}...")
     tokenizer = SimpleTokenizer(tokenizer_path)
-
-    print(f"Building model (precision={precision.upper()})...")
+    if precision == "fp8":
+        use_te = True
+    elif precision == "bf16":
+        use_te = False
+    else:
+        use_te = C['use_te']
+    
+    precision_display = precision.upper() if precision else f"CONFIG (use_te={use_te})"
+    print(f"Building model (precision={precision_display})...")
     model = NanoLLM(
         vocab_size=C['vocab_size'], 
         d_model=d_model, 
@@ -45,7 +52,7 @@ def load_loaded_model(precision="bf16", model_ckpt=llm_chat_file_path):
         n_head=n_head, 
         max_len=block_size,
         n_kv_head=n_kv_head,
-        use_te=precision == "fp8"
+        use_te=use_te
     )
     model.to(device, dtype=torch.bfloat16)
 
@@ -184,8 +191,8 @@ if __name__ == "__main__":
         "--precision", 
         type=str, 
         choices=["bf16", "fp8"], 
-        default="bf16",
-        help="Precision mode: bf16 (PyTorch native) or fp8 (Transformer Engine)"
+        default=None,
+        help="Precision mode: bf16 (PyTorch native) or fp8 (Transformer Engine). If not specified, uses config value."
     )
 
     parser.add_argument(
@@ -206,7 +213,7 @@ if __name__ == "__main__":
     print("="*50)
     print("Generation Configuration")
     print("="*50)
-    print(f"Precision:        {args.precision.upper()}")
+    print(f"Precision:        {args.precision.upper() if args.precision else 'CONFIG'}")
     print(f"Device:           {device}")
     print(f"Checkpoint:       {args.ckpt}")
     print(f"Chat format:      {'BASE' if args.base else 'CHATBOT'}")

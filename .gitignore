@@ -1,4 +1,5 @@
-checkpoints/*
+checkpoints/*.pt
+checkpoints/samples/*.pt
 data/raw/*
 
 .venv/*

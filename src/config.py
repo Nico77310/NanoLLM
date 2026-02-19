@@ -19,8 +19,7 @@ config = {
     'n_kv_head': 3,
     'vocab_size': 49152,
 
-    # LayerNorm 
-    'use_layernorm': True, # Using LayerNorm instead of RMSNorm
+    'use_layernorm': True,
 
     # BATCHS
     'batch_size': 256,
@@ -33,6 +32,18 @@ config = {
     'logging_interval': 2,
 
     # DEVICE
-    'device': 'cuda' if torch.cuda.is_available() else 'cpu'
+    'device': 'cuda' if torch.cuda.is_available() else 'cpu',
+
+    # FP8 PRECISON (USING TRANSFORMER ENGINE FROM NVIDIA)
+    'use_te': False ,
+
+    # CURRICULUM LEARNING RATIOS
+    'stage_ratios': {
+        1: {"web": 0.85, "python": 0.15, "cosmo": 0.0, "math": 0.0, "talk": 0.0},
+        2: {"web": 0.70, "python": 0.20, "cosmo": 0.10, "math": 0.0, "talk": 0.0},
+        3: {"web": 0.55, "python": 0.20, "cosmo": 0.10, "math": 0.15, "talk": 0.0},
+        4: {"web": 0.35, "python": 0.20, "cosmo": 0.25, "math": 0.20, "talk": 0.0},
+        5: {"web": 0.15, "python": 0.0,  "cosmo": 0.10, "math": 0.0, "talk": 0.75}
+    }
     
 }

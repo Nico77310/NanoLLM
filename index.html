@@ -1,298 +1,92 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NanoLLM Chat</title>
-    
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
-
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
+    <title>NanoLLM - Rapport de Projet</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .chat-container {
-            width: 90%;
-            max-width: 850px;
-            height: 90vh;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .chat-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            text-align: center;
-        }
-
-        .chat-header h1 { font-size: 24px; font-weight: 600; }
-        .status { font-size: 12px; margin-top: 5px; opacity: 0.9; }
-
-        .chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .message {
-            display: flex;
-            gap: 15px;
-            max-width: 85%;
-            animation: fadeIn 0.3s ease-in;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .message.user {
-            align-self: flex-end;
-            flex-direction: row-reverse;
-        }
-
-        .message-avatar {
-            width: 36px; height: 36px; border-radius: 50%;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: bold; color: white; flex-shrink: 0;
-        }
-
-        .message.user .message-avatar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .message.assistant .message-avatar { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-
-        .message-content {
-            background: #f1f3f4;
-            padding: 14px 18px;
-            border-radius: 18px;
-            word-wrap: break-word;
-            line-height: 1.5;
-        }
-
-        .message.user .message-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-top-right-radius: 4px;
-        }
-
-        .message.assistant .message-content {
-            background: #f8f9fa;
-            color: #202124;
-            border: 1px solid #e8eaed;
-            border-top-left-radius: 4px;
-        }
-
-        .message-content p { margin-bottom: 10px; }
-        .message-content p:last-child { margin-bottom: 0; }
-        
-        .message-content pre {
-            background: #282c34;
-            color: #abb2bf;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 10px 0;
-            overflow-x: auto;
-            font-family: 'Fira Code', 'Consolas', monospace;
-            font-size: 13px;
-        }
-        
-        .message-content code {
-            font-family: 'Fira Code', 'Consolas', monospace;
-            background: rgba(0,0,0,0.05);
-            padding: 2px 4px;
-            border-radius: 4px;
-            font-size: 0.9em;
-        }
-        
-        .message-content pre code {
-            background: transparent;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+            margin: 0;
             padding: 0;
         }
 
-        .message-content ul, .message-content ol {
-            margin-left: 20px;
-            margin-bottom: 10px;
-        }
-
-        .chat-input-container {
-            padding: 20px; background: white; border-top: 1px solid #e0e0e0;
-        }
-
-        .chat-input-wrapper { display: flex; gap: 10px; align-items: center; }
-
-        #user-input {
-            flex: 1; padding: 12px 16px; border: 2px solid #e0e0e0;
-            border-radius: 24px; font-size: 14px; outline: none;
-            transition: border-color 0.2s;
-        }
-
-        #user-input:focus { border-color: #667eea; }
-
-        #send-button {
+        .hero {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white; border: none; padding: 12px 24px;
-            border-radius: 24px; cursor: pointer; font-weight: 600;
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
         }
 
-        #send-button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .blinking-cursor::after {
-            content: '▋'; animation: blink 1s step-end infinite; color: #764ba2;
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
         }
-        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+        .btn-demo {
+            display: inline-block;
+            background: white;
+            color: #764ba2;
+            text-decoration: none;
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+
+        .btn-demo:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        }
+
+        h2 {
+            color: #764ba2;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
     </style>
 </head>
-
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <h1>🤖 NanoLLM API</h1>
-            <div class="status" id="status">Connected to Hugging Face Cloud ☁️</div>
-        </div>
 
-        <div class="chat-messages" id="chat-messages">
-        </div>
-
-        <div class="chat-input-container">
-            <div class="chat-input-wrapper">
-                <input type="text" id="user-input" placeholder="Ask me for code or an equation...">
-                <button id="send-button">Send</button>
-            </div>
-        </div>
+    <div class="hero">
+        <h1>Projet NanoLLM</h1>
+        <p>Un modèle de langage miniature, quantifié et optimisé pour l'inférence sur CPU.</p>
+        
+        <a href="chat/" class="btn-demo">Try Demo</a>
     </div>
 
-    <script>
-        marked.setOptions({
-            highlight: function(code, lang) {
-                const language = hljs.getLanguage(lang) ? lang : 'plaintext';
-                return hljs.highlight(code, { language }).value;
-            },
-            breaks: true
-        });
+    <div class="container">
+        <h2>1. Introduction</h2>
+        <p>Bienvenue sur la page d'explication du projet NanoLLM. Ce document détaille l'architecture, l'entraînement et les méthodes d'optimisation utilisées (comme Transformer Engine et la quantification torchao).</p>
 
-        const chatMessages = document.getElementById('chat-messages');
-        const userInput = document.getElementById('user-input');
-        const sendButton = document.getElementById('send-button');
-        const statusEl = document.getElementById('status');
+        <h2>2. Architecture (LLaMA-like)</h2>
+        <p>Le modèle est architecturé autour d'un Transformer classique avec les améliorations suivantes :</p>
+        <ul>
+            <li><strong>RMSNorm :</strong> Remplacement de la LayerNorm standard pour une meilleure stabilité numérique en grande dimension.</li>
+            <li><strong>SwiGLU :</strong> Fonction d'activation optimisée.</li>
+            <li><strong>RoPE :</strong> Rotary Positional Embeddings.</li>
+        </ul>
 
-        const API_URL = "https://nico77310-nanollm.hf.space/chat";
+        <h2>3. Optimisation et Inférence</h2>
+        <p>Pour héberger ce modèle sur un serveur gratuit (CPU Dual-Core), une quantification <strong>INT8 (Weight-Only)</strong> a été implémentée, divisant la bande passante mémoire nécessaire par deux tout en préservant la qualité de génération.</p>
+        
+        </div>
 
-        function addMessage(role, content) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${role}`;
-
-            const avatar = document.createElement('div');
-            avatar.className = 'message-avatar';
-            avatar.textContent = role === 'user' ? '👤' : '🤖';
-
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'message-content';
-            
-            if(content === '...') {
-                contentDiv.classList.add('blinking-cursor');
-            } else {
-                contentDiv.innerHTML = marked.parse(content);
-            }
-
-            messageDiv.appendChild(avatar);
-            messageDiv.appendChild(contentDiv);
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-
-            return contentDiv;
-        }
-
-        async function handleSend() {
-            const message = userInput.value.trim();
-            if (!message) return;
-
-            userInput.disabled = true; sendButton.disabled = true;
-            addMessage('user', message);
-            userInput.value = '';
-
-            const responseContentDiv = addMessage('assistant', '...');
-            statusEl.textContent = 'Generating...';
-
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message })
-                });
-
-                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-                responseContentDiv.classList.remove('blinking-cursor');
-                
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder("utf-8");
-                
-                let fullText = "";
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    
-                    const chunk = decoder.decode(value, { stream: true });
-                    fullText += chunk;
-                    
-                    responseContentDiv.innerHTML = marked.parse(fullText);
-                    
-                    try {
-                        renderMathInElement(responseContentDiv, {
-                            delimiters: [
-                                {left: '$$', right: '$$', display: true},
-                                {left: '$', right: '$', display: false},
-                                {left: '\\(', right: '\\)', display: false},
-                                {left: '\\[', right: '\\]', display: true}
-                            ],
-                            throwOnError: false
-                        });
-                    } catch(e) {
-                    }
-                    
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
-
-                statusEl.textContent = 'Connected to Hugging Face Cloud ☁️';
-
-            } catch (error) {
-                console.error('API Error:', error);
-                responseContentDiv.classList.remove('blinking-cursor');
-                responseContentDiv.textContent = 'Sorry, an error occurred.';
-                statusEl.textContent = 'Connection error.';
-            }
-
-            userInput.disabled = false; sendButton.disabled = false;
-            userInput.focus();
-        }
-
-        sendButton.addEventListener('click', handleSend);
-        userInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleSend(); });
-        userInput.focus();
-    </script>
 </body>
 </html>
