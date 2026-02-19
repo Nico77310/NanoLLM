@@ -2,6 +2,8 @@ checkpoints/*.pt
 checkpoints/samples/*.pt
 data/raw/*
 
+*.npz
+
 .venv/*
 
 src/__pycache__

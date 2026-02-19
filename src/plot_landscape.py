@@ -96,7 +96,7 @@ def evaluate_loss_surfaces(model, theta_star, d1, d2, validation_batches, ref_di
     print(f"Computing Loss Landscapes on {grid_steps}x{grid_steps} grid...")
     
     surfaces = {stage: np.zeros((grid_steps, grid_steps)) for stage in validation_batches.keys()}
-    micro_batch_size = config['micro_batch_size']
+    micro_batch_size = 4
     
     for i, alpha in enumerate(tqdm(alphas, desc="Balayage Alpha")):
         for j, beta in enumerate(betas):
@@ -136,8 +136,14 @@ def create_smooth_animation(alphas, betas, surfaces, proj_coords, ckpt_stages):
     A, B = np.meshgrid(alphas, betas)
     
     all_z = np.concatenate([s.flatten() for s in surfaces.values()])
-    z_min = all_z.min()
-    z_max = np.percentile(all_z, 95) 
+    valid_z = all_z[np.isfinite(all_z)]
+    
+    if len(valid_z) == 0:
+        print("NaN or infinite values detected in loss surfaces. Using default z-limits.")
+        z_min, z_max = 0.0, 10.0
+    else:
+        z_min = valid_z.min()
+        z_max = np.percentile(valid_z, 95)
     
     fig = plt.figure(figsize=(12, 9))
     ax = fig.add_subplot(111, projection='3d')
@@ -234,6 +240,10 @@ def main():
         tokens_count = tokens_list[-1] if tokens_list else 0
             
         stage = get_stage_from_tokens(path, tokens_count)
+        
+        if "sft_ckpt" in os.path.basename(path):
+            stage = 5
+            
         ckpt_stages.append(stage)
         
         state_dict = ckpt.get('model_state_dict', ckpt)
@@ -274,6 +284,20 @@ def main():
     d2 = d2.to(device)
     
     surfaces = evaluate_loss_surfaces(model, theta_star, d1, d2, val_batches, ref_dict, alphas, betas)
+
+    print("Saving landscape data...")
+    save_dict = {
+        'alphas': alphas, 
+        'betas': betas, 
+        'proj_coords': np.array(proj_coords), 
+        'ckpt_stages': np.array(ckpt_stages)
+    }
+    for stage, surf in surfaces.items():
+        save_dict[f'surface_stage_{stage}'] = surf
+        
+    np.savez("landscape_data_backup.npz", **save_dict)
+    print("Landscape data was written to landscape_data_backup.npz")
+
     create_smooth_animation(alphas, betas, surfaces, proj_coords, ckpt_stages)
 
 if __name__ == "__main__":

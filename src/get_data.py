@@ -134,7 +134,7 @@ def format_for_sft(example, tokenizer):
     
     return all_ids, all_labels
 
-def prepare_validation_data(batch_size=config['batch_size']):
+def prepare_validation_data(batch_size=16):
     dest = config['dataset_path']
     tok_json = os.path.join(config['tokenizer_path'], "tokenizer.json")
     tokenizer = SimpleTokenizer(tok_json)
