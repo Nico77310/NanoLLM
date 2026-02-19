@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NanoLLM - Rapport de Projet</title>
+    <title>NanoLLM - Project Report</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -65,26 +65,25 @@
 <body>
 
     <div class="hero">
-        <h1>Projet NanoLLM</h1>
-        <p>Un modèle de langage miniature, quantifié et optimisé pour l'inférence sur CPU.</p>
+        <h1>NanoLLM Project</h1>
+        <p>A miniature language model, quantized and optimized for CPU inference.</p>
         
         <a href="chat/" class="btn-demo">Try Demo</a>
     </div>
 
     <div class="container">
         <h2>1. Introduction</h2>
-        <p>Bienvenue sur la page d'explication du projet NanoLLM. Ce document détaille l'architecture, l'entraînement et les méthodes d'optimisation utilisées (comme Transformer Engine et la quantification torchao).</p>
+        <p>Welcome to the NanoLLM project explanation page. This document details the architecture, training, and optimization methods.</p>
 
         <h2>2. Architecture (LLaMA-like)</h2>
-        <p>Le modèle est architecturé autour d'un Transformer classique avec les améliorations suivantes :</p>
+        <p>The model is architected around a classic Transformer with the following improvements:</p>
         <ul>
-            <li><strong>RMSNorm :</strong> Remplacement de la LayerNorm standard pour une meilleure stabilité numérique en grande dimension.</li>
-            <li><strong>SwiGLU :</strong> Fonction d'activation optimisée.</li>
-            <li><strong>RoPE :</strong> Rotary Positional Embeddings.</li>
+            <li><strong>SwiGLU:</strong> Optimized activation function.</li>
+            <li><strong>RoPE:</strong> Rotary Positional Embeddings.</li>
         </ul>
 
-        <h2>3. Optimisation et Inférence</h2>
-        <p>Pour héberger ce modèle sur un serveur gratuit (CPU Dual-Core), une quantification <strong>INT8 (Weight-Only)</strong> a été implémentée, divisant la bande passante mémoire nécessaire par deux tout en préservant la qualité de génération.</p>
+        <h2>3. Optimization and Inference</h2>
+        <p>To host this model on a free server (Dual-Core CPU)</p>
         
         </div>
 
