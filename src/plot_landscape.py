@@ -15,7 +15,6 @@ grid_steps = 25
 morph_frames = 10
 
 def get_stage_from_tokens(filepath, tokens_count):
-    """Détermine le stage du curriculum en lisant le nom du fichier ou le compteur de tokens."""
     filename = os.path.basename(filepath).lower()
     
     if "final_chat_model" in filename:
@@ -30,7 +29,6 @@ def get_stage_from_tokens(filepath, tokens_count):
     return 4
 
 def load_validation_batches():
-    """Charge les 5 batchs de validation depuis les fichiers .bin."""
     print("Loading validation batches from .bin files...")
     dest = config['dataset_path']
     seq_len = config['block_size'] + 1
@@ -67,7 +65,6 @@ def unflatten_weights(flat_weights, reference_state_dict):
     return new_dict
 
 def compute_pca_and_gram_schmidt(checkpoints_flat):
-    """Calcule les 2 directions principales (Dual PCA) et force l'orthogonalité (Gram-Schmidt) sur CPU."""
     print("Computing PCA and orthonormalization on CPU...")
     theta_star = checkpoints_flat[-1]
     
@@ -130,7 +127,6 @@ def evaluate_loss_surfaces(model, theta_star, d1, d2, validation_batches, ref_di
     return surfaces
 
 def get_z_altitude(alpha_val, beta_val, alphas_arr, betas_arr, surface):
-    """Trouve l'altitude Z d'un point sur une surface donnée."""
     idx_a = np.abs(alphas_arr - alpha_val).argmin()
     idx_b = np.abs(betas_arr - beta_val).argmin()
     return surface[idx_a, idx_b]
@@ -165,8 +161,8 @@ def create_smooth_animation(alphas, betas, surfaces, proj_coords, ckpt_stages):
         ax.scatter([history_x[-1]], [history_y[-1]], [history_z[-1]], color=stage_color, s=250, marker='*', edgecolor='black')
         
         ax.set_title(title, fontsize=14, pad=20)
-        ax.set_xlabel("Direction Principale 1 (PCA)")
-        ax.set_ylabel("Direction Principale 2 (PCA)")
+        ax.set_xlabel("Fist principal direction (PCA)")
+        ax.set_ylabel("Second principal direction (PCA)")
         ax.set_zlabel("Cross-Entropy Loss")
         
         ax.view_init(elev=30, azim=45) 
@@ -190,7 +186,7 @@ def create_smooth_animation(alphas, betas, surfaces, proj_coords, ckpt_stages):
                     title = f"Curriculum Transition: Stage {prev_stage} ➔ {target_stage}"
                     draw_frame(morphed_surface, idx - 1, title, 'white')
                     
-            title = f"Entraînement : Stage {target_stage} (Checkpoint {idx+1}/{len(proj_coords)})"
+            title = f"Training : Stage {target_stage} (Checkpoint {idx+1}/{len(proj_coords)})"
             for _ in range(5): 
                 draw_frame(surfaces[target_stage], idx, title, colors[target_stage])
                 
