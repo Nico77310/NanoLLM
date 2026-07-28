@@ -37,16 +37,10 @@ tokenizer_path = C['tokenizer_path'] + "/tokenizer.json"
 llm_chat_file_path = "checkpoints/hilbert_chat_model.pt"
 
 def apply_repetition_penalty(logits, sequences, penalty, window=50):
-    for i in range(logits.shape[0]):
-        seq_window = sequences[i, -window:].tolist() if sequences.shape[1] > window else sequences[i].tolist()
-        previous_tokens = set(seq_window)
-        
-        for token_id in previous_tokens:
-            if logits[i, token_id] < 0:
-                logits[i, token_id] *= penalty
-            else:
-                logits[i, token_id] /= penalty
-    
+    seq_window = sequences[:, -window:]
+    scores = torch.gather(logits, 1, seq_window)
+    scores = torch.where(scores < 0, scores * penalty, scores / penalty)
+    logits.scatter_(1, seq_window, scores)
     return logits
 
 def load_loaded_model(precision=None, model_ckpt=llm_chat_file_path):
@@ -100,15 +94,16 @@ def generate_streaming(model, context, tokenizer, max_new_tokens=200, temperatur
     trigger_chars = [".", "!", "?", "\n"] 
     
     with torch.no_grad():
-        for step in range(max_new_tokens):
-            block_size = getattr(model, 'max_len', 512)
-            
-            if context.shape[1] > block_size:
-                idx_cond = context[:, -block_size:]
-            else:
-                idx_cond = context
+        block_size = getattr(model, 'max_len', 512)
 
-            logits = model(idx_cond)
+        if context.shape[1] > block_size:
+            context = context[:, -block_size:]
+
+        kv_caches = None
+        model_input = context 
+
+        for step in range(max_new_tokens):
+            logits, kv_caches = model(model_input, kv_caches=kv_caches, use_cache=True)
             logits = logits[:, -1, :] / temperature
             
             if repetition_penalty > 1.0:
@@ -161,6 +156,14 @@ def generate_streaming(model, context, tokenizer, max_new_tokens=200, temperatur
                         break
 
             context = torch.cat((context, idx_next), dim=1)
+
+            if context.shape[1] >= block_size:
+
+                context = context[:, -(block_size - 1):]
+                kv_caches = None
+                model_input = context
+            else:
+                model_input = idx_next
 
     return generated_text
 

@@ -17,11 +17,12 @@ class RoPE(nn.Module):
         self.register_buffer('cos', embedding.cos()[None, None, :, :])
         self.register_buffer('sin', embedding.sin()[None, None, :, :])
 
-    def forward(self, x):
+    def forward(self, x, offset=0):
         # x shape: (Batch, n_head, SeqLen, HeadDim)
+        # offset: absolute position of the first token of x (non-zero when decoding with a KV cache)
         seq_len = x.shape[2]
-        cos = self.cos[:, :, :seq_len, :]
-        sin = self.sin[:, :, :seq_len, :]
+        cos = self.cos[:, :, offset:offset + seq_len, :]
+        sin = self.sin[:, :, offset:offset + seq_len, :]
         x1, x2 = x.chunk(2, dim=-1)
         x_rotated_half = torch.cat((-x2, x1), dim=-1)
         return (x * cos) + (x_rotated_half * sin)
@@ -87,18 +88,18 @@ class TransformerBlock(nn.Module):
                     nn.Linear(ffn_hidden, d_model, bias=False)
                 )
                 
-    def forward(self, x):
+    def forward(self, x, kv_cache=None, use_cache=False):
         residual = x
-        
+
         if self.use_te:
             qkv = self.ln_attn(x)
         else:
             x_norm = self.ln1(x)
             qkv = self.qkv_proj(x_norm)
-        
+
         q, k, v = torch.split(qkv, [self.q_size, self.kv_size, self.kv_size], dim=2)
         B, T, _ = q.size()
-        
+
         q = q.view(B, T, self.n_head, self.head_dim)
         k = k.view(B, T, self.n_kv_head, self.head_dim)
         v = v.view(B, T, self.n_kv_head, self.head_dim)
@@ -107,12 +108,27 @@ class TransformerBlock(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        q = self.rope(q)
-        k = self.rope(k)
+        offset = kv_cache[0].shape[2] if kv_cache is not None else 0
 
-        attn_out = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
+        q = self.rope(q, offset)
+        k = self.rope(k, offset)
+
+        if kv_cache is not None:
+            k = torch.cat((kv_cache[0], k), dim=2)
+            v = torch.cat((kv_cache[1], v), dim=2)
+
+        new_kv = (k, v) if use_cache else None
+
+        if offset == 0:
+            attn_out = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
+        elif T == 1:
+            attn_out = F.scaled_dot_product_attention(q, k, v, is_causal=False, enable_gqa=True)
+        else:
+            mask = torch.ones(T, k.shape[2], dtype=torch.bool, device=q.device).tril(diagonal=offset)
+            attn_out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, enable_gqa=True)
+
         attn_out = attn_out.transpose(1, 2).contiguous().view(B, T, self.d_model)
-        
+
         x = residual + self.c_proj(attn_out)
 
         if self.use_te:
@@ -120,8 +136,8 @@ class TransformerBlock(nn.Module):
             x = x + self.ln_mlp(x)
         else:
             x = x + self.mlp(self.ln2(x))
-        
-        return x
+
+        return x, new_kv
 
 class HilbertLM(nn.Module):
     def __init__(self, vocab_size, d_model, n_layer, n_head, max_len, use_te=False, n_kv_head=None):
@@ -164,12 +180,17 @@ class HilbertLM(nn.Module):
             elif isinstance(module, nn.Embedding):
                 nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, x, targets=None):
+    def forward(self, x, targets=None, kv_caches=None, use_cache=False):
         x = self.token_embedding(x)
-        
-        for layer in self.layers:
-            x = layer(x)
-        
+
+        new_kv_caches = [] if use_cache else None
+
+        for i, layer in enumerate(self.layers):
+            layer_cache = kv_caches[i] if kv_caches is not None else None
+            x, new_kv = layer(x, kv_cache=layer_cache, use_cache=use_cache)
+            if use_cache:
+                new_kv_caches.append(new_kv)
+
         x = self.final_norm(x)
 
         if self.use_te:
@@ -181,11 +202,14 @@ class HilbertLM(nn.Module):
 
         if targets is not None:
             loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)), 
+                logits.view(-1, logits.size(-1)),
                 targets.view(-1)
             )
             return logits, loss
-        
+
+        if use_cache:
+            return logits, new_kv_caches
+
         return logits
     
 
