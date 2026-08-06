@@ -17,24 +17,45 @@ class RoPE(nn.Module):
         self.register_buffer('cos', embedding.cos()[None, None, :, :])
         self.register_buffer('sin', embedding.sin()[None, None, :, :])
 
-    def forward(self, x, offset=0):
+    def forward(self, x, start_pos=0):
         # x shape: (Batch, n_head, SeqLen, HeadDim)
-        # offset: absolute position of the first token of x (non-zero when decoding with a KV cache)
+        # start_pos is the absolute index of x[:, :, 0]: during decoding x holds
+        # a single token whose real position is start_pos, not 0.
         seq_len = x.shape[2]
-        cos = self.cos[:, :, offset:offset + seq_len, :]
-        sin = self.sin[:, :, offset:offset + seq_len, :]
+        cos = self.cos[:, :, start_pos:start_pos + seq_len, :]
+        sin = self.sin[:, :, start_pos:start_pos + seq_len, :]
         x1, x2 = x.chunk(2, dim=-1)
         x_rotated_half = torch.cat((-x2, x1), dim=-1)
         return (x * cos) + (x_rotated_half * sin)
-    
+
 class SwiGLU(nn.Module):
     def forward(self, x):
         x, gate = x.chunk(2, dim=-1)
         return F.silu(x) * gate
 
+class KVCache:
+    def __init__(self, n_layer, batch_size, n_kv_head, head_dim, max_len, device, dtype=torch.float32):
+        shape = (batch_size, n_kv_head, max_len, head_dim)
+        self.k = [torch.zeros(shape, device=device, dtype=dtype) for _ in range(n_layer)]
+        self.v = [torch.zeros(shape, device=device, dtype=dtype) for _ in range(n_layer)]
+        self.max_len = max_len
+        self.length = 0 
+
+    def update(self, layer_idx, k, v, start_pos):
+        end = start_pos + k.shape[2]
+        if end > self.max_len:
+            raise ValueError(f"KV cache overflow: {end} > max_len={self.max_len}")
+        self.k[layer_idx][:, :, start_pos:end] = k
+        self.v[layer_idx][:, :, start_pos:end] = v
+        return self.k[layer_idx][:, :, :end], self.v[layer_idx][:, :, :end]
+
+    def reset(self):
+        self.length = 0
+
 class TransformerBlock(nn.Module):
-    def __init__(self, d_model, n_head, max_len, n_kv_head=None, use_te=False):
+    def __init__(self, d_model, n_head, max_len, n_kv_head=None, use_te=False, layer_idx=0):
         super().__init__()
+        self.layer_idx = layer_idx
         self.n_head = n_head
         self.n_kv_head = n_kv_head if n_kv_head is not None else n_head
         self.head_dim = d_model // n_head
@@ -88,7 +109,7 @@ class TransformerBlock(nn.Module):
                     nn.Linear(ffn_hidden, d_model, bias=False)
                 )
                 
-    def forward(self, x, kv_cache=None, use_cache=False):
+    def forward(self, x, start_pos=0, kv_cache=None):
         residual = x
 
         if self.use_te:
@@ -108,23 +129,19 @@ class TransformerBlock(nn.Module):
         k = k.transpose(1, 2)
         v = v.transpose(1, 2)
 
-        offset = kv_cache[0].shape[2] if kv_cache is not None else 0
-
-        q = self.rope(q, offset)
-        k = self.rope(k, offset)
+        q = self.rope(q, start_pos)
+        k = self.rope(k, start_pos)
 
         if kv_cache is not None:
-            k = torch.cat((kv_cache[0], k), dim=2)
-            v = torch.cat((kv_cache[1], v), dim=2)
+            k, v = kv_cache.update(self.layer_idx, k, v, start_pos)
 
-        new_kv = (k, v) if use_cache else None
-
-        if offset == 0:
+        k_len = k.shape[2]
+        if T == k_len:
             attn_out = F.scaled_dot_product_attention(q, k, v, is_causal=True, enable_gqa=True)
         elif T == 1:
             attn_out = F.scaled_dot_product_attention(q, k, v, is_causal=False, enable_gqa=True)
         else:
-            mask = torch.ones(T, k.shape[2], dtype=torch.bool, device=q.device).tril(diagonal=offset)
+            mask = torch.ones(T, k_len, dtype=torch.bool, device=q.device).tril(diagonal=k_len - T)
             attn_out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, enable_gqa=True)
 
         attn_out = attn_out.transpose(1, 2).contiguous().view(B, T, self.d_model)
@@ -137,19 +154,23 @@ class TransformerBlock(nn.Module):
         else:
             x = x + self.mlp(self.ln2(x))
 
-        return x, new_kv
+        return x
 
 class HilbertLM(nn.Module):
     def __init__(self, vocab_size, d_model, n_layer, n_head, max_len, use_te=False, n_kv_head=None):
         super().__init__()
         self.max_len = max_len
         self.use_te = use_te
-        
+
+        self.n_layer = n_layer
+        self.n_kv_head = n_kv_head if n_kv_head is not None else n_head
+        self.head_dim = d_model // n_head
+
         self.token_embedding = nn.Embedding(vocab_size, d_model)
-        
+
         self.layers = nn.ModuleList([
-            TransformerBlock(d_model, n_head, max_len, use_te=use_te, n_kv_head=n_kv_head) 
-            for _ in range(n_layer)
+            TransformerBlock(d_model, n_head, max_len, use_te=use_te, n_kv_head=n_kv_head, layer_idx=i)
+            for i in range(n_layer)
         ])
         
         if use_te:
@@ -180,16 +201,31 @@ class HilbertLM(nn.Module):
             elif isinstance(module, nn.Embedding):
                 nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, x, targets=None, kv_caches=None, use_cache=False):
+    def new_kv_cache(self, batch_size=1, max_len=None):
+        ref = next(self.parameters())
+        return KVCache(
+            n_layer=self.n_layer,
+            batch_size=batch_size,
+            n_kv_head=self.n_kv_head,
+            head_dim=self.head_dim,
+            max_len=max_len if max_len is not None else self.max_len,
+            device=ref.device,
+            dtype=ref.dtype,
+        )
+
+    def forward(self, x, targets=None, kv_cache=None, start_pos=None):
+        if start_pos is None:
+            start_pos = kv_cache.length if kv_cache is not None else 0
+
         x = self.token_embedding(x)
 
-        new_kv_caches = [] if use_cache else None
+        for layer in self.layers:
+            x = layer(x, start_pos=start_pos, kv_cache=kv_cache)
 
-        for i, layer in enumerate(self.layers):
-            layer_cache = kv_caches[i] if kv_caches is not None else None
-            x, new_kv = layer(x, kv_cache=layer_cache, use_cache=use_cache)
-            if use_cache:
-                new_kv_caches.append(new_kv)
+        if kv_cache is not None:
+            kv_cache.length = start_pos + x.shape[1]
+            if targets is None:
+                x = x[:, -1:, :]
 
         x = self.final_norm(x)
 
@@ -206,9 +242,6 @@ class HilbertLM(nn.Module):
                 targets.view(-1)
             )
             return logits, loss
-
-        if use_cache:
-            return logits, new_kv_caches
 
         return logits
     

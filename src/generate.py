@@ -1,5 +1,3 @@
-from pyexpat import model
-
 import torch
 import os
 import argparse
@@ -94,28 +92,28 @@ def generate_streaming(model, context, tokenizer, max_new_tokens=200, temperatur
     trigger_chars = [".", "!", "?", "\n"] 
     
     with torch.no_grad():
-        block_size = getattr(model, 'max_len', 512)
+        cache_len = min(max_context, getattr(model, 'max_len', max_context))
 
-        if context.shape[1] > block_size:
-            context = context[:, -block_size:]
+        if context.shape[1] >= cache_len:
+            context = context[:, -(cache_len - 1):]
 
-        kv_caches = None
-        model_input = context 
+        kv_cache = model.new_kv_cache(batch_size=1, max_len=cache_len)
+
+        logits = model(context, kv_cache=kv_cache)
 
         for step in range(max_new_tokens):
-            logits, kv_caches = model(model_input, kv_caches=kv_caches, use_cache=True)
-            logits = logits[:, -1, :] / temperature
-            
-            if repetition_penalty > 1.0:
-                logits = apply_repetition_penalty(logits, context, repetition_penalty, window=64)
-            
-            if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = -float('Inf')
+            step_logits = logits[:, -1, :] / temperature
 
-            probs = torch.nn.functional.softmax(logits, dim=-1)
+            if repetition_penalty > 1.0:
+                step_logits = apply_repetition_penalty(step_logits, context, repetition_penalty, window=64)
+
+            if top_k is not None:
+                v, _ = torch.topk(step_logits, min(top_k, step_logits.size(-1)))
+                step_logits[step_logits < v[:, [-1]]] = -float('Inf')
+
+            probs = torch.nn.functional.softmax(step_logits, dim=-1)
             idx_next = torch.multinomial(probs, num_samples=1)
-            
+
             if eos_token_id is not None and idx_next.item() == eos_token_id:
                 break
             
@@ -126,44 +124,41 @@ def generate_streaming(model, context, tokenizer, max_new_tokens=200, temperatur
             generated_text += token_text
             print(token_text, end='', flush=True)
             
-            if judge is not None:
-                in_dollar_math = generated_text.count("$") % 2 != 0
-                in_code_block = generated_text.count("```") % 2 != 0
-                
-                latex_depth = (
-                    generated_text.count("\\begin{") + generated_text.count("\\[") 
-                    - generated_text.count("\\end{") - generated_text.count("\\]")
-                )
-                
-                if in_code_block or in_dollar_math or latex_depth > 0 or generated_text.strip().endswith(":") or generated_text.strip().endswith("="):
-                    pass 
-                
-                elif step > 5 and any(char in token_text for char in trigger_chars):
-                    score = judge.predict([current_user_prompt, generated_text.strip()])
+            in_dollar_math = generated_text.count("$") % 2 != 0
+            in_code_block = generated_text.count("```") % 2 != 0
 
-                    ratio = step / max_new_tokens
-                    
-                    current_threshold = max_thresh - (ratio * (max_thresh - min_thresh))
-                    
-                    if score > current_threshold:
-                        print(f"\nDynamic stop! (Score: {score:.2f} > Threshold: {current_threshold:.2f} at step {step})", flush=True)
-                        break
+            latex_depth = (
+                generated_text.count("\\begin{") + generated_text.count("\\[")
+                - generated_text.count("\\end{") - generated_text.count("\\]")
+            )
 
-                if "\n" in token_text:
-                    lines = [line.strip() for line in generated_text.split('\n') if len(line.strip()) > 4]
-                    if len(lines) != len(set(lines)):
-                        print("\nStop ! Repetition was detected...", flush=True)
-                        break
+            if in_code_block or in_dollar_math or latex_depth > 0 or generated_text.strip().endswith(":") or generated_text.strip().endswith("="):
+                pass
+
+            elif judge is not None and step > 5 and any(char in token_text for char in trigger_chars):
+                score = judge.predict([current_user_prompt, generated_text.strip()])
+
+                ratio = step / max_new_tokens
+
+                current_threshold = max_thresh - (ratio * (max_thresh - min_thresh))
+
+                if score > current_threshold:
+                    print(f"\nDynamic stop! (Score: {score:.2f} > Threshold: {current_threshold:.2f} at step {step})", flush=True)
+                    break
+
+            if "\n" in token_text:
+                lines = [line.strip() for line in generated_text.split('\n') if len(line.strip()) > 4]
+                if len(lines) != len(set(lines)):
+                    print("\nStop ! Repetition was detected...", flush=True)
+                    break
 
             context = torch.cat((context, idx_next), dim=1)
 
-            if context.shape[1] >= block_size:
+            if kv_cache.length >= kv_cache.max_len:
+                print("\nStop ! KV cache is full...", flush=True)
+                break
 
-                context = context[:, -(block_size - 1):]
-                kv_caches = None
-                model_input = context
-            else:
-                model_input = idx_next
+            logits = model(idx_next, kv_cache=kv_cache)
 
     return generated_text
 
